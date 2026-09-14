@@ -1,0 +1,79 @@
+# Frequently Asked Questions
+
+## Ordering & Payment
+
+### Q: What payment methods do you accept?
+A: We accept credit cards (Visa, MasterCard, Amex), PayPal, bank transfer, and purchase orders for enterprise customers.
+
+### Q: Can I change my plan later?
+A: Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately, and billing is prorated.
+
+### Q: Do you offer refunds?
+A: Yes, we offer a 30-day money-back guarantee for all subscription plans. No questions asked.
+
+## Returns & Refunds
+
+### Q: What is your return policy?
+A: Products can be returned within 30 days of purchase. The product must be unused and in original packaging.
+
+### Q: How do I return a product?
+A: Contact our support team with your order number. We'll send you a prepaid return label and process your refund within 5 business days.
+
+### Q: Are there any non-returnable items?
+A: Downloaded software licenses and custom-made products cannot be returned unless defective.
+
+## Shipping & Delivery
+
+### Q: How long does shipping take?
+A: 
+- Netherlands: 1-2 business days
+- Belgium & Germany: 2-3 business days
+- Rest of EU: 3-5 business days
+- International: 5-10 business days
+
+### Q: Do you offer free shipping?
+A: Yes, free shipping on orders over €50 within the Netherlands and over €100 in the EU.
+
+### Q: Can I track my order?
+A: Absolutely! You'll receive a tracking number via email once your order ships.
+
+## Technical Support
+
+### Q: How do I contact support?
+A: 
+- Email: support@company.com
+- Phone: +31 20 1234567 (Mon-Fri, 9:00-17:00)
+- Chat: Available on our website during business hours
+- Emergency: emergency@company.com (24/7 for enterprise customers)
+
+### Q: What is your response time?
+A:
+- Basic plan: Within 24 hours
+- Premium plan: Within 4 hours
+- Enterprise plan: Within 1 hour (24/7)
+
+## Account Management
+
+### Q: How do I reset my password?
+A: Click "Forgot Password" on the login page. You'll receive a reset link via email.
+
+### Q: Can I add more users to my account?
+A: Yes, go to Settings > Team Management. Additional users are billed at €10/user/month for Premium plans.
+
+### Q: How do I cancel my subscription?
+A: Go to Settings > Billing > Cancel Subscription. Your account remains active until the end of the billing period.
+
+## Security & Privacy
+
+### Q: Is my data secure?
+A: Yes! We use bank-level encryption (AES-256), regular security audits, and comply with GDPR.
+
+### Q: Where is my data stored?
+A: All data is stored in EU-based data centers (Amsterdam and Frankfurt).
+
+### Q: Do you share my data with third parties?
+A: Never. Your data is yours alone. We only use trusted processors (like AWS) for infrastructure.
+
+---
+
+For more questions, contact us at support@company.com

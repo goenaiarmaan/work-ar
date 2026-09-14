@@ -1,374 +1,300 @@
-from __future__ import annotations
+# WhatsApp Business Agent - Core Implementation
 
-from datetime import date, datetime, timedelta
+from flask import Flask, request, jsonify
+from twilio.twiml.messaging_response import MessagingResponse
+from dotenv import load_dotenv
+import os
+import logging
+from datetime import datetime
+import pytz
+import json
 
-import pandas as pd
-import streamlit as st
+# Load environment variables
+load_dotenv()
 
-from storage import add_log, dashboard_stats, fetch_logs, fetch_logs_in_range, get_settings, init_db, save_settings
-from workout_data import BADGES, motivation_for_day, pick_workout_for_date
+app = Flask(__name__)
 
-
-st.set_page_config(
-    page_title="Momentum Coach",
-    page_icon="💪",
-    layout="wide",
+# Configure logging
+logging.basicConfig(
+    level=os.getenv('LOG_LEVEL', 'INFO'),
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/agent.log'),
+        logging.StreamHandler()
+    ]
 )
+logger = logging.getLogger(__name__)
 
-init_db()
-
-
-def inject_styles() -> None:
-    st.markdown(
-        """
-        <style>
-            :root {
-                --bg: #f3efe5;
-                --panel: rgba(255, 251, 244, 0.92);
-                --panel-strong: #fffaf1;
-                --text: #1f2a1f;
-                --muted: #617164;
-                --accent: #1f6f5f;
-                --accent-soft: #dceee4;
-                --warm: #d9802e;
-                --border: rgba(31, 42, 31, 0.10);
-            }
-            .stApp {
-                background:
-                    radial-gradient(circle at top left, rgba(217, 128, 46, 0.18), transparent 28%),
-                    radial-gradient(circle at top right, rgba(31, 111, 95, 0.16), transparent 26%),
-                    linear-gradient(180deg, #f6f0e4 0%, #efe6d7 100%);
-                color: var(--text);
-            }
-            h1, h2, h3 {
-                color: var(--text);
-                letter-spacing: -0.02em;
-            }
-            .block-card {
-                background: var(--panel);
-                border: 1px solid var(--border);
-                border-radius: 20px;
-                padding: 1.1rem 1.2rem;
-                box-shadow: 0 14px 40px rgba(57, 65, 49, 0.08);
-            }
-            .hero {
-                background: linear-gradient(135deg, rgba(31,111,95,0.95), rgba(26,76,64,0.95));
-                color: #f9f5ef;
-                border-radius: 24px;
-                padding: 1.4rem 1.5rem;
-                box-shadow: 0 18px 42px rgba(20, 50, 44, 0.22);
-            }
-            .mini-label {
-                text-transform: uppercase;
-                font-size: 0.76rem;
-                letter-spacing: 0.09em;
-                color: var(--muted);
-            }
-            .quote {
-                background: rgba(255, 250, 241, 0.76);
-                border-left: 6px solid var(--warm);
-                border-radius: 14px;
-                padding: 1rem 1.1rem;
-                color: var(--text);
-            }
-            .exercise {
-                background: var(--panel-strong);
-                border: 1px solid var(--border);
-                border-radius: 16px;
-                padding: 0.9rem 1rem;
-                margin-bottom: 0.8rem;
-            }
-            .badge {
-                display: inline-block;
-                padding: 0.45rem 0.75rem;
-                background: var(--accent-soft);
-                color: var(--accent);
-                border-radius: 999px;
-                margin: 0.2rem 0.35rem 0.2rem 0;
-                font-weight: 600;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+# Configuration
+COMPANY_NAME = os.getenv('COMPANY_NAME', 'YourCompany')
+WORK_HOURS_START = int(os.getenv('WORK_HOURS_START', 9))
+WORK_HOURS_END = int(os.getenv('WORK_HOURS_END', 17))
+TIMEZONE = os.getenv('TIMEZONE', 'Europe/Amsterdam')
 
 
-def render_header(settings: dict) -> None:
-    today_text = date.today().strftime("%A %d %B %Y")
-    st.markdown(
-        f"""
-        <div class="hero">
-            <div class="mini-label">Momentum Coach</div>
-            <h1 style="margin: 0.2rem 0 0.5rem 0;">{settings["name"]}, vandaag bouwen we momentum.</h1>
-            <p style="margin: 0; font-size: 1.05rem;">
-                Focus: {settings["goal"]}. Niet wachten op motivatie, maar slim en consistent trainen met wat je thuis hebt.
-            </p>
-            <p style="margin-top: 0.7rem; opacity: 0.9;">{today_text}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def get_today_workout(settings: dict) -> dict:
-    mode_map = {
-        "Laag": "low",
-        "Normaal": "normal",
-        "Hoog": "high",
-    }
-    energy_mode = mode_map.get(settings["energy_today"], "normal")
-    minutes = int(settings["preferred_minutes"])
-
-    if st.session_state.get("quick_mode"):
-        return pick_workout_for_date(date.today(), "normal", 15)
-    if st.session_state.get("show_up_mode"):
-        return pick_workout_for_date(date.today(), "show_up", minutes)
-    return pick_workout_for_date(date.today(), energy_mode, minutes)
-
-
-def render_metrics(stats: dict, target: int) -> None:
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Workouts voltooid", stats["completed_count"])
-    col2.metric("Huidige streak", f'{stats["streak"]} dagen')
-    col3.metric("Deze week", f'{stats["weekly_count"]}/{target} dagen')
-    col4.metric("Beste week", f'{stats["best_week"]} trainingen')
-
-
-def render_dashboard(settings: dict) -> None:
-    stats = dashboard_stats()
-    render_metrics(stats, int(settings["weekly_target"]))
-
-    progress_ratio = min(stats["weekly_count"] / max(int(settings["weekly_target"]), 1), 1.0)
-    st.progress(progress_ratio, text=f"Weekdoel: {stats['weekly_count']} van {settings['weekly_target']} trainingen")
-
-    left, right = st.columns([1.3, 1])
-    with left:
-        st.markdown('<div class="block-card">', unsafe_allow_html=True)
-        st.subheader("Coach-overzicht")
-        st.write(f"Laatste workout: **{stats['latest_workout']}**")
-        st.write(f"Gemiddelde energie: **{stats['avg_energy'] or '-'} / 10**")
-        st.write(f"Gemiddelde zwaarte: **{stats['avg_difficulty'] or '-'} / 10**")
-        if stats["latest_weight"] is not None:
-            st.write(f"Laatst gelogd gewicht: **{stats['latest_weight']} kg**")
-        st.write("Focus van deze app: opdagen, slim trainen en je voortgang zichtbaar maken.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with right:
-        st.markdown('<div class="block-card">', unsafe_allow_html=True)
-        st.subheader("Badges")
-        unlocked = [badge for badge in BADGES if stats["completed_count"] >= badge[0]]
-        if unlocked:
-            for _, title, desc in unlocked:
-                st.markdown(f'<span class="badge">{title}</span>', unsafe_allow_html=True)
-                st.caption(desc)
+class WhatsAppAgent:
+    """
+    Main agent class that handles customer conversations
+    """
+    
+    def __init__(self):
+        self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not self.openai_api_key:
+            logger.warning("OPENAI_API_KEY not set. Agent will run in mock mode.")
+        
+    def is_within_work_hours(self):
+        """Check if current time is within work hours"""
+        tz = pytz.timezone(TIMEZONE)
+        now = datetime.now(tz)
+        
+        # Check weekend
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            return False
+        
+        # Check work hours
+        return WORK_HOURS_START <= now.hour < WORK_HOURS_END
+    
+    def analyze_sentiment(self, message):
+        """Analyze sentiment of customer message"""
+        negative_words = ['boos', 'frustratie', 'slecht', 'teleurgesteld', 
+                         'probleem', 'klaag', 'niet werken', 'geld terug',
+                         'angry', 'frustrated', 'bad', 'disappointed', 'problem']
+        
+        urgent_words = ['dringend', 'urgent', 'direct', 'nu', 'asap', 
+                       'emergency', 'spoed']
+        
+        message_lower = message.lower()
+        
+        sentiment_score = 0
+        urgency_score = 0
+        
+        for word in negative_words:
+            if word in message_lower:
+                sentiment_score -= 1
+        
+        for word in urgent_words:
+            if word in message_lower:
+                urgency_score += 1
+        
+        # Classify sentiment
+        if sentiment_score <= -2:
+            sentiment = 'negative'
+        elif sentiment_score >= 1:
+            sentiment = 'positive'
         else:
-            st.write("Je eerste badge ligt klaar na 3 workouts.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    recent_logs = fetch_logs(limit=8)
-    if recent_logs:
-        frame = pd.DataFrame(recent_logs)
-        frame["log_date"] = pd.to_datetime(frame["log_date"])
-        summary = frame.groupby(frame["log_date"].dt.date)["completed"].sum().reset_index()
-        summary.columns = ["Datum", "Trainingen"]
-        st.subheader("Recent ritme")
-        st.line_chart(summary.set_index("Datum"))
-
-
-def render_today(settings: dict) -> None:
-    st.session_state.setdefault("quick_mode", False)
-    st.session_state.setdefault("show_up_mode", False)
-
-    button_col1, button_col2 = st.columns(2)
-    if button_col1.button("Ik heb maar 15 minuten", use_container_width=True):
-        st.session_state["quick_mode"] = True
-        st.session_state["show_up_mode"] = False
-    if button_col2.button("Geen zin vandaag", use_container_width=True):
-        st.session_state["show_up_mode"] = True
-        st.session_state["quick_mode"] = False
-
-    workout = get_today_workout(settings)
-
-    st.markdown('<div class="block-card">', unsafe_allow_html=True)
-    st.subheader(f"Vandaag: {workout['title']}")
-    st.write(f"**Duur:** {workout['duration']} minuten")
-    st.write(f"**Tools:** {', '.join(workout['tools'])}")
-    st.write(f"**Niveau:** {workout['difficulty']}")
-    st.write(f"**Focus:** {', '.join(workout['focus'])}")
-    st.info(workout["coach_note"])
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if settings.get("show_quotes", True):
-        st.markdown(
-            f'<div class="quote"><strong>Motivatie van de dag</strong><br>{motivation_for_day(date.today())}</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.subheader("Oefeningen")
-    for exercise in workout["exercises"]:
-        st.markdown(
-            f"""
-            <div class="exercise">
-                <strong>{exercise["name"]}</strong><br>
-                {exercise["prescription"]}<br>
-                <span style="color:#617164;">{exercise["note"]}</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.subheader("Workout loggen")
-    with st.form("log_workout"):
-        completed = st.checkbox("Ik heb deze workout gedaan", value=True)
-        difficulty_score = st.slider("Hoe zwaar voelde het?", 1, 10, 6)
-        achieved_text = st.text_input("Sets/reps gehaald", placeholder="Bijv. alle sets gehaald, laatste plank 25 sec")
-        energy_score = st.slider("Energielevel na de training", 1, 10, 7)
-        mood = st.selectbox("Hoe voelde je je mentaal?", ["Scherp", "Oké", "Moe", "Trots", "Moest mezelf duwen"])
-        body_weight = st.number_input("Gewicht (optioneel)", min_value=0.0, step=0.1, value=0.0)
-        note = st.text_area("Korte notitie", placeholder="Wat ging goed, wat was lastig, waar wil je op letten?")
-        submitted = st.form_submit_button("Sla workout op", use_container_width=True)
-
-        if submitted:
-            add_log(
-                {
-                    "log_date": date.today().isoformat(),
-                    "workout_title": workout["title"],
-                    "workout_type": workout["type"],
-                    "duration_minutes": workout["duration"],
-                    "completed": completed,
-                    "difficulty_score": difficulty_score,
-                    "achieved_text": achieved_text,
-                    "energy_score": energy_score,
-                    "note": note,
-                    "body_weight": body_weight if body_weight > 0 else None,
-                    "mood": mood,
-                }
-            )
-            st.success("Workout opgeslagen. Consistentie telt.")
-            st.session_state["quick_mode"] = False
-            st.session_state["show_up_mode"] = False
-
-
-def render_logbook() -> None:
-    st.subheader("Workout-logboek")
-    logs = fetch_logs()
-    if not logs:
-        st.write("Nog geen trainingen gelogd.")
-        return
-
-    frame = pd.DataFrame(logs)
-    frame["completed"] = frame["completed"].map({1: "Ja", 0: "Nee"})
-    frame = frame.rename(
-        columns={
-            "log_date": "Datum",
-            "workout_title": "Workout",
-            "workout_type": "Type",
-            "duration_minutes": "Minuten",
-            "completed": "Gedaan",
-            "difficulty_score": "Zwaarte",
-            "achieved_text": "Resultaat",
-            "energy_score": "Energie",
-            "note": "Notitie",
-            "body_weight": "Gewicht",
-            "mood": "Mood",
+            sentiment = 'neutral'
+        
+        # Classify urgency
+        if urgency_score >= 2:
+            priority = 'high'
+        elif urgency_score == 1:
+            priority = 'medium'
+        else:
+            priority = 'low'
+        
+        return {
+            'sentiment': sentiment,
+            'priority': priority,
+            'score': sentiment_score
         }
-    )
-    st.dataframe(frame[["Datum", "Workout", "Type", "Minuten", "Gedaan", "Zwaarte", "Energie", "Gewicht", "Mood", "Resultaat", "Notitie"]], use_container_width=True)
+    
+    def should_escalate(self, message, sentiment_analysis, can_answer):
+        """Determine if ticket should be created"""
+        
+        if not can_answer:
+            return True, 'unable_to_answer'
+        
+        if sentiment_analysis['sentiment'] == 'negative':
+            return True, 'negative_sentiment'
+        
+        if sentiment_analysis['priority'] == 'high':
+            return True, 'high_priority'
+        
+        return False, None
+    
+    def generate_response(self, message, context=None):
+        """Generate response using LLM"""
+        
+        if not self.openai_api_key:
+            return self._mock_response(message)
+        
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain.schema import HumanMessage, SystemMessage
+            
+            llm = ChatOpenAI(
+                model='gpt-4',
+                temperature=0.7,
+                api_key=self.openai_api_key
+            )
+            
+            system_prompt = f"""Je bent een behulpzame klantenservice agent voor {COMPANY_NAME}.
+            
+Jouw taken:
+1. Beantwoord klantvragen vriendelijk en professioneel
+2. Geef accurate informatie over producten en diensten
+3. Wees behulpzaam en empathisch
+4. Als je iets niet weet, geef dat eerlijk toe
+
+Belangrijke richtlijnen:
+- Houd antwoorden beknopt (max 300 woorden)
+- Gebruik emoji's waar passend 😊
+- Bied altijd vervolghulp aan
+- Verwijs niet naar AI of dat je een bot bent
+
+Als de vraag te complex is, zeg dan: "Laat me dit navragen bij ons team. Zij nemen binnen 2 uur contact met je op."
+"""
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=message)
+            ]
+            
+            if context:
+                messages.insert(1, HumanMessage(content=f"Context: {context}"))
+            
+            response = llm.invoke(messages)
+            return response.content
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {e}")
+            return self._mock_response(message)
+    
+    def _mock_response(self, message):
+        """Mock response for testing without API key"""
+        
+        message_lower = message.lower()
+        
+        if 'prijs' in message_lower or 'kost' in message_lower:
+            return "Onze prijzen variëren per product. Kun je specificeren welk product je interesseert? Ik help je graag met de juiste informatie! 💰"
+        
+        elif 'openingstijd' in message_lower or 'open' in message_lower:
+            return f"Wij zijn geopend van {WORK_HOURS_START}:00 tot {WORK_HOURS_END}:00 op werkdagen. Na deze tijden help ik je graag hier! 🕐"
+        
+        elif 'contact' in message_lower or 'bellen' in message_lower:
+            return "Je kunt ons bereiken via:\n📧 Email: support@company.com\n📞 Telefoon: +31 20 1234567\n\nWaar kan ik je verder mee helpen?"
+        
+        elif 'retour' in message_lower or 'terugsturen' in message_lower:
+            return "Ons retourbeleid:\n✅ Binnen 30 dagen\n✅ Product ongebruikt\n✅ Originele verpakking\n\nHeb je je ordernummer bij de hand? Dan help ik je direct verder!"
+        
+        elif 'levering' in message_lower or 'verzending' in message_lower:
+            return "Levering gebeurt binnen 2-3 werkdagen. Je ontvangt een track & trace code zodra je pakket verzonden is. 📦\n\nWil je de status van een bestelling checken?"
+        
+        else:
+            return "Bedankt voor je bericht! Ik help je graag. Kun je wat meer details geven over je vraag? Dan kan ik je beter assisteren! 😊"
 
 
-def render_progress() -> None:
-    st.subheader("Progressie-overzicht")
-    end = date.today()
-    start = end - timedelta(days=60)
-    logs = fetch_logs_in_range(start, end)
-    if not logs:
-        st.write("Log een paar workouts om je progressie hier te zien.")
-        return
-
-    frame = pd.DataFrame(logs)
-    frame["log_date"] = pd.to_datetime(frame["log_date"])
-
-    weekly = frame.groupby(frame["log_date"].dt.to_period("W")).agg(
-        trainingen=("completed", "sum"),
-        energie=("energy_score", "mean"),
-        zwaarte=("difficulty_score", "mean"),
-    ).reset_index()
-    weekly["week"] = weekly["log_date"].astype(str)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("Trainingen per week")
-        st.bar_chart(weekly.set_index("week")["trainingen"])
-    with col2:
-        st.write("Gemiddelde energie en zwaarte")
-        st.line_chart(weekly.set_index("week")[["energie", "zwaarte"]])
-
-    weight_rows = frame.dropna(subset=["body_weight"])
-    if not weight_rows.empty:
-        st.write("Gewichtstrend")
-        weights = weight_rows[["log_date", "body_weight"]].rename(columns={"log_date": "Datum", "body_weight": "Gewicht"})
-        st.line_chart(weights.set_index("Datum"))
-
-    st.subheader("Weekly review")
-    last_14 = frame[frame["log_date"] >= pd.Timestamp(datetime.now() - timedelta(days=14))]
-    completed = int(last_14["completed"].sum())
-    avg_energy = round(last_14["energy_score"].mean(), 1) if not last_14["energy_score"].dropna().empty else "-"
-    avg_difficulty = round(last_14["difficulty_score"].mean(), 1) if not last_14["difficulty_score"].dropna().empty else "-"
-    st.write(f"In de afgelopen 14 dagen deed je **{completed}** trainingen.")
-    st.write(f"Gemiddelde energie: **{avg_energy} / 10**")
-    st.write(f"Gemiddelde zwaarte: **{avg_difficulty} / 10**")
-    st.write("Reflectievraag: welke gewoonte hielp je deze periode het meest om toch te trainen?")
+# Initialize agent
+agent = WhatsAppAgent()
 
 
-def render_settings(settings: dict) -> dict:
-    st.subheader("Instellingen")
-    with st.form("settings_form"):
-        name = st.text_input("Jouw naam of coach-naam", value=settings["name"])
-        goal = st.text_input("Doel", value=settings["goal"])
-        level = st.selectbox("Niveau", ["Beginner", "Beginner-Intermediate", "Intermediate"], index=["Beginner", "Beginner-Intermediate", "Intermediate"].index(settings["level"]))
-        preferred_minutes = st.slider("Beschikbare tijd per dag", 10, 60, int(settings["preferred_minutes"]), 5)
-        weekly_target = st.slider("Doel: trainingen per week", 2, 7, int(settings["weekly_target"]))
-        energy_today = st.selectbox("Verwachte energie vandaag", ["Laag", "Normaal", "Hoog"], index=["Laag", "Normaal", "Hoog"].index(settings["energy_today"]))
-        show_quotes = st.checkbox("Toon motivatiebericht", value=bool(settings.get("show_quotes", True)))
-        saved = st.form_submit_button("Instellingen opslaan", use_container_width=True)
-        if saved:
-            settings = {
-                "name": name,
-                "goal": goal,
-                "level": level,
-                "preferred_minutes": preferred_minutes,
-                "weekly_target": weekly_target,
-                "energy_today": energy_today,
-                "show_quotes": show_quotes,
-            }
-            save_settings(settings)
-            st.success("Instellingen opgeslagen.")
-            return settings
-    return settings
+@app.route('/webhook/whatsapp', methods=['POST'])
+def whatsapp_webhook():
+    """Handle incoming WhatsApp messages"""
+    
+    try:
+        incoming_msg = request.values.get('Body', '').strip()
+        from_number = request.values.get('From', '')
+        to_number = request.values.get('To', '')
+        
+        if not incoming_msg:
+            logger.warning("Empty message received")
+            return jsonify({'error': 'No message body'}), 400
+        
+        logger.info(f"Message from {from_number}: {incoming_msg[:100]}...")
+        
+        if agent.is_within_work_hours():
+            logger.info("Within work hours, but AI responding")
+        
+        sentiment = agent.analyze_sentiment(incoming_msg)
+        logger.info(f"Sentiment: {sentiment}")
+        
+        response_text = agent.generate_response(incoming_msg)
+        
+        should_esc, reason = agent.should_escalate(
+            incoming_msg, 
+            sentiment, 
+            can_answer=True
+        )
+        
+        if should_esc:
+            logger.info(f"Escalating ticket. Reason: {reason}")
+            from ticket_system import create_ticket
+            ticket = create_ticket(
+                customer_phone=from_number,
+                question=incoming_msg,
+                sentiment=sentiment,
+                conversation_history=[incoming_msg],
+                reason=reason
+            )
+            logger.info(f"Ticket created: {ticket.get('ticket_id')}")
+            
+            if sentiment['sentiment'] == 'negative':
+                response_text = (
+                    "Het spijt me te horen dat je deze ervaring hebt. "
+                    "Ik begrijp je frustratie.\n\n"
+                    "Ik heb je vraag geëscaleerd naar ons specialistische team. "
+                    "Zij nemen binnen 2 uur contact met je op om dit op te lossen.\n\n"
+                    "Kan je nog kort beschrijven wat er precies misging? "
+                    "Dan heeft het team alle informatie. 🙏"
+                )
+            else:
+                response_text = (
+                    "Bedankt voor je vraag! Dit is een specifieke kwestie die ik graag "
+                    "door ons team laat bekijken.\n\n"
+                    "Zij nemen morgen tijdens kantoortijden contact met je op met een antwoord. "
+                    "Is dat goed? 😊"
+                )
+        
+        resp = MessagingResponse()
+        resp.message(response_text)
+        
+        logger.info(f"Response sent to {from_number}")
+        
+        return str(resp)
+        
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}", exc_info=True)
+        resp = MessagingResponse()
+        resp.message("Excuses, er ging iets mis. Probeer het opnieuw of bel ons direct.")
+        return str(resp)
 
 
-def main() -> None:
-    inject_styles()
-    settings = get_settings()
-    render_header(settings)
-
-    page = st.sidebar.radio(
-        "Ga naar",
-        ["Dashboard", "Vandaag", "Logboek", "Progressie", "Instellingen"],
-    )
-    st.sidebar.caption("Train slim. Verschijn vaak. Bouw momentum.")
-
-    if page == "Dashboard":
-        render_dashboard(settings)
-    elif page == "Vandaag":
-        render_today(settings)
-    elif page == "Logboek":
-        render_logbook()
-    elif page == "Progressie":
-        render_progress()
-    elif page == "Instellingen":
-        render_settings(settings)
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'work_hours': agent.is_within_work_hours()
+    })
 
 
-if __name__ == "__main__":
-    main()
+@app.route('/test', methods=['POST'])
+def test_agent():
+    """Test endpoint for local testing"""
+    message = request.json.get('message', '')
+    from_number = request.json.get('from_number', '+31612345678')
+    
+    if not message:
+        return jsonify({'error': 'No message provided'}), 400
+    
+    response = agent.generate_response(message)
+    sentiment = agent.analyze_sentiment(message)
+    
+    return jsonify({
+        'message': message,
+        'response': response,
+        'sentiment': sentiment,
+        'work_hours': agent.is_within_work_hours()
+    })
+
+
+if __name__ == '__main__':
+    os.makedirs('logs', exist_ok=True)
+    
+    port = int(os.getenv('FLASK_PORT', 5000))
+    host = os.getenv('HOST', '0.0.0.0')
+    
+    logger.info(f"Starting WhatsApp Agent server on {host}:{port}")
+    app.run(host=host, port=port, debug=True)
