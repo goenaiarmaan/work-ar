@@ -1,0 +1,10 @@
+Product Name,Category,Price,Description,Features,Warranty
+Tool Pro X1,Software,149,Professional productivity tool,"Fast, Secure, Easy to use",1 year
+Tool Enterprise,Software,499,Enterprise-grade solution,"Scalable, 24/7 Support, Custom",Lifetime
+Cloud Basic,Service,29,Cloud storage service,"5GB, Email support",N/A
+Cloud Premium,Service,79,Advanced cloud service,"50GB, Priority support, API",N/A
+Cloud Enterprise,Service,299,Full cloud platform,"Unlimited, Dedicated support, SLA",N/A
+Hardware Device A,Hardware,89,Smart home device,"WiFi enabled, Voice control",2 years
+Hardware Device B,Hardware,199,Professional hardware,"Industrial grade, Rugged",3 years
+Consulting Hour,Service,150,Expert consulting,"1 hour session, Remote or onsite",N/A
+Training Session,Service,500,Team training,"Half day, Up to 10 people",N/A
